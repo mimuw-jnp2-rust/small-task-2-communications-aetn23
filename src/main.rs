@@ -21,7 +21,11 @@ enum MessageType {
 
 impl MessageType {
     fn header(&self) -> &'static str {
-        todo!()
+        match self {
+            MessageType::Handshake => "[HANDSHAKE]",
+            MessageType::Post => "[POST]",
+            MessageType::GetCount => "[GETCOUNT]",
+        }
     }
 }
 
@@ -69,7 +73,18 @@ impl Client {
     // Method should return an error when a connection already exists.
     // The client should send a handshake to the server.
     fn open(&mut self, addr: &str, server: Server) -> CommsResult<()> {
-        todo!()
+
+        match self.connections.contains_key(addr) {
+            true => CommsResult::Err(CommsError::ConnectionExists("asd".parse().unwrap())),
+            false => {
+                self.connections.insert(addr.parse().unwrap(), Connection::Open(server));
+                self.send(addr, Message {
+                    msg_type: MessageType::Handshake,
+                    load : MessageType::Handshake.header().parse().unwrap(),
+                })
+            }
+
+        }
     }
 
     // Sends the provided message to the server at the given `addr`.
