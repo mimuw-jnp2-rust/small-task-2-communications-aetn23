@@ -73,17 +73,17 @@ impl Client {
     // Method should return an error when a connection already exists.
     // The client should send a handshake to the server.
     fn open(&mut self, addr: &str, server: Server) -> CommsResult<()> {
-
         match self.connections.contains_key(addr) {
             true => CommsResult::Err(CommsError::ConnectionExists("asd".parse().unwrap())),
             false => {
                 self.connections.insert(addr.parse().unwrap(), Connection::Open(server));
+
                 self.send(addr, Message {
                     msg_type: MessageType::Handshake,
-                    load : MessageType::Handshake.header().parse().unwrap(),
-                })
+                    load: addr.parse().unwrap(),
+                });
+                CommsResult::Ok(())
             }
-
         }
     }
 
@@ -92,15 +92,30 @@ impl Client {
     // responds with a ServerLimitReached error, its corresponding connection
     // should be closed.
     fn send(&mut self, addr: &str, msg: Message) -> CommsResult<Response> {
-        // server.receive(msg)
-        todo!()
+        match self.is_open(addr) {
+            true => {
+                let connection = self.connections.get_mut(addr).unwrap();
+                let server_response = match connection {
+                    Connection::Open(server) => server.receive(msg) ,
+                    _ => CommsResult::Err(CommsError::ServerLimitReached("not possible".parse().unwrap())),
+                };
+                server_response
+            }
+            false => CommsResult::Err(CommsError::ConnectionClosed("asdasd".parse().unwrap()))
+        }
     }
 
     // Returns whether the connection to `addr` exists and has
     // the `Open` status.
     #[allow(dead_code)]
     fn is_open(&self, addr: &str) -> bool {
-        todo!()
+        match self.connections.get(addr) {
+            Some(connection) => match connection {
+                Connection::Closed => false,
+                Connection::Open(_) => true,
+            }
+            None => false,
+        }
     }
 
     // Returns the number of closed connections
