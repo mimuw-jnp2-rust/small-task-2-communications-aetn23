@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use crate::CommsError::ConnectionClosed;
+use crate::Response::{GetCount, HandshakeReceived, PostReceived};
 
 type CommsResult<T> = Result<T, CommsError>;
 
@@ -21,7 +23,11 @@ enum MessageType {
 
 impl MessageType {
     fn header(&self) -> &'static str {
-        todo!()
+        match self {
+            MessageType::Handshake => "[HANDSHAKE]",
+            MessageType::Post => "[POST]",
+            MessageType::GetCount => "[GET COUNT]",
+        }
     }
 }
 
@@ -69,7 +75,20 @@ impl Client {
     // Method should return an error when a connection already exists.
     // The client should send a handshake to the server.
     fn open(&mut self, addr: &str, server: Server) -> CommsResult<()> {
-        todo!()
+        match self.connections.contains_key(addr) {
+            true => CommsResult::Err(CommsError::ConnectionExists("asd".parse().unwrap())),
+            false => {
+                self.connections.insert(addr.parse().unwrap(), Connection::Open(server));
+
+                match self.send(addr, Message {
+                    msg_type: MessageType::Handshake,
+                    load: addr.parse().unwrap(),
+                }) {
+                    CommsResult::Err(error) => CommsResult::Err(error),
+                    CommsResult::Ok(..) => CommsResult::Ok(()),
+                }
+            }
+        }
     }
 
     // Sends the provided message to the server at the given `addr`.
@@ -77,21 +96,41 @@ impl Client {
     // responds with a ServerLimitReached error, its corresponding connection
     // should be closed.
     fn send(&mut self, addr: &str, msg: Message) -> CommsResult<Response> {
-        // server.receive(msg)
-        todo!()
+        match self.is_open(addr) {
+            true => {
+                let connection = self.connections.get_mut(addr).unwrap();
+                let server_response = match connection {
+                    Connection::Open(server) => server.receive(msg),
+                    _ => CommsResult::Err(CommsError::ServerLimitReached("not possible".parse().unwrap())),
+                };
+                if let CommsResult::Err(CommsError::ServerLimitReached(_)) = server_response {
+                    self.connections.insert(addr.parse().unwrap(), Connection::Closed);
+                }
+                server_response
+            }
+            false => CommsResult::Err(CommsError::ConnectionClosed("asdasd".parse().unwrap()))
+        }
     }
 
     // Returns whether the connection to `addr` exists and has
     // the `Open` status.
     #[allow(dead_code)]
     fn is_open(&self, addr: &str) -> bool {
-        todo!()
+        match self.connections.get(addr) {
+            Some(connection) => match connection {
+                Connection::Closed => false,
+                Connection::Open(_) => true,
+            }
+            None => false,
+        }
     }
 
     // Returns the number of closed connections
     #[allow(dead_code)]
     fn count_closed(&self) -> usize {
-        todo!()
+        let iterator = self.connections.values().filter(|connection| matches!(connection, Connection::Closed));
+        //find out if this works as desired
+        iterator.count()
     }
 }
 
@@ -113,7 +152,12 @@ struct Server {
 
 impl Server {
     fn new(name: String, limit: u32) -> Server {
-        todo!()
+        Server {
+            name,
+            post_count: 0,
+            limit,
+            connected_client: None,
+        }
     }
 
     // Consumes the message.
@@ -124,7 +168,22 @@ impl Server {
     fn receive(&mut self, msg: Message) -> CommsResult<Response> {
         eprintln!("{} received:\n{}", self.name, msg.content());
 
-        todo!()
+        match msg.msg_type {
+            MessageType::Handshake => match self.connected_client {
+                None => CommsResult::Ok(HandshakeReceived),
+                Some(_) => CommsResult::Err(CommsError::UnexpectedHandshake("Une".parse().unwrap())),
+            }
+            MessageType::GetCount => CommsResult::Ok(GetCount(self.post_count)),
+            MessageType::Post => match self.post_count >= self.limit {
+                true => CommsResult::Err(CommsError::ServerLimitReached("asd".parse().unwrap())),
+                false => {
+                    self.post_count += 1;
+                    CommsResult::Ok(PostReceived)
+                }
+            }
+        }
+
+
     }
 }
 
