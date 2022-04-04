@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use crate::CommsError::ConnectionClosed;
+use crate::Response::{GetCount, HandshakeReceived, PostReceived};
 
 type CommsResult<T> = Result<T, CommsError>;
 
@@ -24,7 +26,7 @@ impl MessageType {
         match self {
             MessageType::Handshake => "[HANDSHAKE]",
             MessageType::Post => "[POST]",
-            MessageType::GetCount => "[GETCOUNT]",
+            MessageType::GetCount => "[GET COUNT]",
         }
     }
 }
@@ -78,11 +80,13 @@ impl Client {
             false => {
                 self.connections.insert(addr.parse().unwrap(), Connection::Open(server));
 
-                self.send(addr, Message {
+                match self.send(addr, Message {
                     msg_type: MessageType::Handshake,
                     load: addr.parse().unwrap(),
-                });
-                CommsResult::Ok(())
+                }) {
+                    CommsResult::Err(error) => CommsResult::Err(error),
+                    CommsResult::Ok(..) => CommsResult::Ok(()),
+                }
             }
         }
     }
@@ -96,9 +100,12 @@ impl Client {
             true => {
                 let connection = self.connections.get_mut(addr).unwrap();
                 let server_response = match connection {
-                    Connection::Open(server) => server.receive(msg) ,
+                    Connection::Open(server) => server.receive(msg),
                     _ => CommsResult::Err(CommsError::ServerLimitReached("not possible".parse().unwrap())),
                 };
+                if let CommsResult::Err(CommsError::ServerLimitReached(_)) = server_response {
+                    self.connections.insert(addr.parse().unwrap(), Connection::Closed);
+                }
                 server_response
             }
             false => CommsResult::Err(CommsError::ConnectionClosed("asdasd".parse().unwrap()))
@@ -121,7 +128,9 @@ impl Client {
     // Returns the number of closed connections
     #[allow(dead_code)]
     fn count_closed(&self) -> usize {
-        todo!()
+        let iterator = self.connections.values().filter(|connection| matches!(connection, Connection::Closed));
+        //find out if this works as desired
+        iterator.count()
     }
 }
 
@@ -143,7 +152,12 @@ struct Server {
 
 impl Server {
     fn new(name: String, limit: u32) -> Server {
-        todo!()
+        Server {
+            name,
+            post_count: 0,
+            limit,
+            connected_client: None,
+        }
     }
 
     // Consumes the message.
@@ -154,7 +168,22 @@ impl Server {
     fn receive(&mut self, msg: Message) -> CommsResult<Response> {
         eprintln!("{} received:\n{}", self.name, msg.content());
 
-        todo!()
+        match msg.msg_type {
+            MessageType::Handshake => match self.connected_client {
+                None => CommsResult::Ok(HandshakeReceived),
+                Some(_) => CommsResult::Err(CommsError::UnexpectedHandshake("Une".parse().unwrap())),
+            }
+            MessageType::GetCount => CommsResult::Ok(GetCount(self.post_count)),
+            MessageType::Post => match self.post_count >= self.limit {
+                true => CommsResult::Err(CommsError::ServerLimitReached("asd".parse().unwrap())),
+                false => {
+                    self.post_count += 1;
+                    CommsResult::Ok(PostReceived)
+                }
+            }
+        }
+
+
     }
 }
 
